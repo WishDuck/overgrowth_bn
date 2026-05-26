@@ -189,7 +189,7 @@ mod.on_mapgen_postprocess = function(params)
 
   for y = 0, size - 1 do
     for x = 0, size - 1 do
-      local p = Tripoint.new(x, y, 0)
+      local p = TripointBubMs.new(x, y, 0)
 
       local ter = map:get_ter_at(p)
 
