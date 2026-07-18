@@ -85,7 +85,7 @@ end
 
 --- Apply the perlin-driven overlay to road-like tiles.
 ---@param map Map
----@param p Tripoint
+---@param p TripointBubMs
 ---@param heat number
 ---@param dirt_id TerIntId
 ---@param grass_id TerIntId
@@ -112,13 +112,13 @@ mod.apply_road_overlay = function(map, p, heat, dirt_id, grass_id, dead_grass_id
     end
   elseif heat < 0.55 then
     if gapi.rng(1, 100) <= 5 then
-	    if gapi.rng(1, 100) <= 50 then
-	      map:set_ter_at(p, tall_grass_id)
-	    elseif gapi.rng(1, 100) <= 75 then
-	      map:set_ter_at(p, young_tree_id)
-	    else 
-	      map:set_ter_at(p, grass_id)
-	    end
+      if gapi.rng(1, 100) <= 50 then
+        map:set_ter_at(p, tall_grass_id)
+      elseif gapi.rng(1, 100) <= 75 then
+        map:set_ter_at(p, young_tree_id)
+      else
+        map:set_ter_at(p, grass_id)
+      end
     end
   elseif heat < 0.65 then
     if gapi.rng(1, 100) <= 5 then
@@ -132,10 +132,30 @@ mod.apply_road_overlay = function(map, p, heat, dirt_id, grass_id, dead_grass_id
   end
 end
 
+--- Scale a percentage chance by overgrowth intensity and clamp it to 100%.
+---@param base_percent number
+---@param intensity number
+---@return number
+mod.scaled_percent = function(base_percent, intensity)
+  return math.min(base_percent * intensity, 100)
+end
+
+--- Calculate overgrowth intensity based on time elapsed.
+---@return number intensity multiplier (0.0 to 1.0+)
+mod.get_overgrowth_intensity = function()
+  local elapsed = (gapi.current_turn() - gapi.turn_zero()):to_turns()
+
+  -- Intensity scales from 0 at turn 0 to 1.0 at turn 50000 (about 35 days)
+  -- Then continues scaling up beyond that
+  local intensity = math.min(elapsed / 15768000, 2.0)
+  return intensity
+end
+
 --- Mapgen hook: replace selected terrains for a rough/overgrown feel + roof punch-outs.
 ---@param params OnMapgenPostprocessParams
 mod.on_mapgen_postprocess = function(params)
   local map = params.map
+  local overgrowth_intensity = mod.get_overgrowth_intensity()
 
   -- windows / glass / doors
   local frame_id = TerId.new("t_window_frame"):int_id()
@@ -221,7 +241,8 @@ mod.on_mapgen_postprocess = function(params)
       end
 
       if ter == fence_id then
-        if gapi.rng(1, 100) <= 25 then
+        local threshold = mod.scaled_percent(25, overgrowth_intensity)
+        if gapi.rng(1, 100) <= threshold then
           map:set_ter_at(p, fence_post_id)
         end
       end
@@ -229,7 +250,8 @@ mod.on_mapgen_postprocess = function(params)
       local ter_str = ter:str_id():str()
 
       if ter == curtains_id then
-        if gapi.rng(1, 100) <= 75 then
+        local threshold = mod.scaled_percent(75, overgrowth_intensity)
+        if gapi.rng(1, 100) <= threshold then
           map:set_ter_at(p, frame_domestic_id)
         end
       end
@@ -243,14 +265,16 @@ mod.on_mapgen_postprocess = function(params)
       end
 
       if ter == pavement_id or ter == pavement_y_id or ter == sidewalk_id or ter == thconc_floor_id then
-        if gapi.rng(1, 100) <= 80 then
+        local threshold = mod.scaled_percent(80, overgrowth_intensity)
+        if gapi.rng(1, 100) <= threshold then
           local heat = mod.perlinish(x, y, seed)
           mod.apply_road_overlay(map, p, heat, dirt_id, grass_id, dead_grass_id, tall_grass_id, young_tree_id)
         end
       end
 
       if ter == grass_id or ter == dirt_id then
-        if gapi.rng(1, 100) <= 2 then
+        local threshold = mod.scaled_percent(2, overgrowth_intensity)
+        if gapi.rng(1, 100) <= threshold then
           local roll = gapi.rng(1, 3)
           if roll == 1 then
             map:set_ter_at(p, tall_grass_id)
@@ -261,7 +285,8 @@ mod.on_mapgen_postprocess = function(params)
       end
 
       if ter == floor_id or ter == floor_waxed_id then
-        if gapi.rng(1, 100) <= 60 then
+        local threshold = mod.scaled_percent(60, overgrowth_intensity)
+        if gapi.rng(1, 100) <= threshold then
           local heat = mod.perlinish(x, y, seed)
           mod.apply_road_overlay(map, p, heat, dirt_id, grass_id, dead_grass_id, tall_grass_id, young_tree_id)
         end
