@@ -4,14 +4,25 @@ local storage = game.mod_storage[game.current_mod]
 mod.storage = storage
 mod.BOARDING_START_DAY = 28
 mod.BOARDING_LOCATION_CHANCE = 0.25
+mod.BOARDING_VARIANT_START_DAY = 56
+mod.BOARDING_REINFORCED_DAY = 84
+mod.BOARDING_ARMORED_DAY = 140
 mod.MAINTENANCE_DURATION_DAYS = 90
+mod.RIOT_DAMAGE_DURATION_DAYS = 5
+mod.RIOT_DAMAGE_BASE_LOCATION_CHANCE = 0.25
+mod.RIOT_WINDOW_DAMAGE_CHANCE = 40
+mod.RIOT_DOOR_DAMAGE_CHANCE = 28
+mod.DEFAULT_RIOT_FIRE_TILE_CHANCE = 1.5
 mod.DESIRE_PATH_LONG_TO_GRASS_CHANCE = 6
 mod.DESIRE_PATH_TALL_TO_GRASS_CHANCE = 10
-mod.DESIRE_PATH_GRASS_TO_DIRT_CHANCE = 2
+mod.DESIRE_PATH_GRASS_TO_DEAD_CHANCE = 3
+mod.DESIRE_PATH_DEAD_TO_DIRT_CHANCE = 2
 mod.DEFAULT_CONFIG = {
   growth_mode = "time",
   overgrowth_rate = 1.0,
   window_boarding_mode = "some",
+  riot_damage_enabled = true,
+  riot_fire_chance = mod.DEFAULT_RIOT_FIRE_TILE_CHANCE,
   desire_paths_enabled = true,
   desire_path_rate = 1.0,
 }
@@ -102,6 +113,19 @@ mod.bub_pos_to_omt = function(pos)
   return abs_pos:to_omt()
 end
 
+--- Record the current in-world turn as this save's mod timing anchor.
+---@return integer
+mod.ensure_world_start_turn = function()
+  local start_turn = tonumber(storage.world_start_turn)
+  if start_turn ~= nil then
+    return start_turn
+  end
+
+  start_turn = (gapi.current_turn() - gapi.turn_zero()):to_turns()
+  storage.world_start_turn = start_turn
+  return start_turn
+end
+
 --- Ensure persistent config exists and has valid values.
 ---@return table
 mod.ensure_config = function()
@@ -121,6 +145,16 @@ mod.ensure_config = function()
   if config.window_boarding_mode ~= "disabled" and config.window_boarding_mode ~= "some" and config.window_boarding_mode ~= "all" then
     config.window_boarding_mode = mod.DEFAULT_CONFIG.window_boarding_mode
   end
+
+  if type(config.riot_damage_enabled) ~= "boolean" then
+    config.riot_damage_enabled = mod.DEFAULT_CONFIG.riot_damage_enabled
+  end
+
+  local riot_fire_chance = tonumber(config.riot_fire_chance)
+  if riot_fire_chance == nil or riot_fire_chance < 0 then
+    riot_fire_chance = mod.DEFAULT_CONFIG.riot_fire_chance
+  end
+  config.riot_fire_chance = math.min(riot_fire_chance, 100)
 
   if type(config.desire_paths_enabled) ~= "boolean" then
     config.desire_paths_enabled = mod.DEFAULT_CONFIG.desire_paths_enabled
@@ -153,9 +187,56 @@ mod.describe_boarding_mode = function()
 end
 
 ---@return string
+mod.describe_riot_damage_mode = function()
+  local config = mod.ensure_config()
+  return config.riot_damage_enabled and "Enabled" or "Disabled"
+end
+
+---@return string
+mod.describe_riot_fire_chance = function()
+  local config = mod.ensure_config()
+  return string.format("%.2f%%", config.riot_fire_chance)
+end
+
+---@return string
 mod.describe_desire_paths_mode = function()
   local config = mod.ensure_config()
   return config.desire_paths_enabled and "Enabled" or "Disabled"
+end
+
+---@return boolean
+mod.should_show_first_world_config_prompt = function()
+  return storage.first_world_config_prompt_shown ~= true
+end
+
+mod.mark_first_world_config_prompt_shown = function()
+  storage.first_world_config_prompt_shown = true
+end
+
+mod.prompt_first_world_config = function()
+  if not mod.should_show_first_world_config_prompt() then
+    return
+  end
+
+  mod.mark_first_world_config_prompt_shown()
+
+  local prompt = QueryPopup.new()
+  prompt:message(string.format(
+    "Overgrowth BN can change major world behavior: overgrowth over time, boarded windows, riot damage in the first %d days, and desire paths. Open the settings menu now?",
+    mod.RIOT_DAMAGE_DURATION_DAYS
+  ))
+  prompt:message_color(Color.c_light_green)
+
+  if prompt:query_yn() == "YES" then
+    mod.open_config_menu()
+  else
+    gapi.add_msg(MsgType.info, "Overgrowth settings kept at their defaults. You can change them later from Misc -> Overgrowth Settings.")
+  end
+end
+
+mod.on_game_started = function()
+  mod.ensure_world_start_turn()
+  mod.prompt_first_world_config()
 end
 
 mod.prompt_desire_path_rate = function()
@@ -178,11 +259,33 @@ mod.prompt_desire_path_rate = function()
   gapi.add_msg(MsgType.good, string.format("Desire path speed set to %.2fx.", rate))
 end
 
+mod.prompt_riot_fire_chance = function()
+  local config = mod.ensure_config()
+  local popup = PopupInputStr.new()
+  popup:title("Riot Fire Chance")
+  popup:desc(string.format("Current value: %.2f%%\nEnter a number from 0 to 100. 0 disables riot-start fires.", config.riot_fire_chance))
+  local value = popup:query_str()
+  if value == nil or value == "" then
+    return
+  end
+
+  local chance = tonumber(value)
+  if chance == nil or chance < 0 or chance > 100 then
+    gapi.add_msg(MsgType.bad, "Riot fire chance must be between 0 and 100.")
+    return
+  end
+
+  config.riot_fire_chance = chance
+  gapi.add_msg(MsgType.good, string.format("Riot fire chance set to %.2f%%.", chance))
+end
+
 mod.reset_config = function()
   storage.config = {
     growth_mode = mod.DEFAULT_CONFIG.growth_mode,
     overgrowth_rate = mod.DEFAULT_CONFIG.overgrowth_rate,
     window_boarding_mode = mod.DEFAULT_CONFIG.window_boarding_mode,
+    riot_damage_enabled = mod.DEFAULT_CONFIG.riot_damage_enabled,
+    riot_fire_chance = mod.DEFAULT_CONFIG.riot_fire_chance,
     desire_paths_enabled = mod.DEFAULT_CONFIG.desire_paths_enabled,
     desire_path_rate = mod.DEFAULT_CONFIG.desire_path_rate,
   }
@@ -243,19 +346,24 @@ mod.open_config_menu = function()
     menu:title("Overgrowth Settings")
     menu:desc_enabled(true)
     menu:text(string.format(
-      "Growth mode: %s\nOvergrowth rate: %.2fx\nWindow boarding: %s\nDesire paths: %s\nDesire path speed: %.2fx\n\nPeriodic growth only updates z=0. Boarding only affects newly generated intact windows. Desire paths use lightweight foot-traffic wear on z=0.",
+      "Growth mode: %s\nOvergrowth rate: %.2fx\nWindow boarding: %s\nRiot damage: %s\nRiot fire chance: %s\nDesire paths: %s\nDesire path speed: %.2fx\n\nPeriodic growth only updates z=0. Boarding only affects newly generated intact windows. Riot damage is mapgen-only for some buildings during the first %d days. Desire paths use lightweight foot-traffic wear on z=0.",
       mod.describe_growth_mode(),
       config.overgrowth_rate,
       mod.describe_boarding_mode(),
+      mod.describe_riot_damage_mode(),
+      mod.describe_riot_fire_chance(),
       mod.describe_desire_paths_mode(),
-      config.desire_path_rate
+      config.desire_path_rate,
+      mod.RIOT_DAMAGE_DURATION_DAYS
     ))
     menu:add_w_desc(0, "Toggle Growth Mode", "Switch between gradual growth over time and instant full overgrowth.")
     menu:add_w_desc(1, string.format("Set Overgrowth Rate (%.2fx)", config.overgrowth_rate), "Adjust how quickly and strongly overgrowth applies.")
     menu:add_w_desc(2, "Configure Window Boarding", "Choose whether newly generated intact windows can be boarded.")
-    menu:add_w_desc(3, string.format("Toggle Desire Paths (%s)", mod.describe_desire_paths_mode()), "Use lightweight traffic wear from player, NPC, and monster movement on z=0.")
-    menu:add_w_desc(4, string.format("Set Desire Path Speed (%.2fx)", config.desire_path_rate), "Adjust how quickly foot traffic wears grass into dirt.")
-    menu:add_w_desc(5, "Reset Defaults", "Restore the default mod settings.")
+    menu:add_w_desc(3, string.format("Toggle Riot Damage (%s)", mod.describe_riot_damage_mode()), "Allow some newly generated buildings to spawn with early-collapse damage and small fires during the first few days.")
+    menu:add_w_desc(4, string.format("Set Riot Fire Chance (%s)", mod.describe_riot_fire_chance()), "Adjust the per-tile chance for riot-start fires during early-world mapgen.")
+    menu:add_w_desc(5, string.format("Toggle Desire Paths (%s)", mod.describe_desire_paths_mode()), "Use lightweight traffic wear from player, NPC, and monster movement on z=0.")
+    menu:add_w_desc(6, string.format("Set Desire Path Speed (%.2fx)", config.desire_path_rate), "Adjust how quickly foot traffic wears grass into dirt.")
+    menu:add_w_desc(7, "Reset Defaults", "Restore the default mod settings.")
 
     local choice = menu:query()
     if choice < 0 then
@@ -268,11 +376,16 @@ mod.open_config_menu = function()
     elseif choice == 2 then
       mod.select_window_boarding_mode()
     elseif choice == 3 then
+      config.riot_damage_enabled = not config.riot_damage_enabled
+      gapi.add_msg(MsgType.good, string.format("Riot damage: %s.", mod.describe_riot_damage_mode()))
+    elseif choice == 4 then
+      mod.prompt_riot_fire_chance()
+    elseif choice == 5 then
       config.desire_paths_enabled = not config.desire_paths_enabled
       gapi.add_msg(MsgType.good, string.format("Desire paths: %s.", mod.describe_desire_paths_mode()))
-    elseif choice == 4 then
+    elseif choice == 6 then
       mod.prompt_desire_path_rate()
-    elseif choice == 5 then
+    elseif choice == 7 then
       config = mod.reset_config()
       gapi.add_msg(MsgType.good, "Overgrowth settings reset to defaults.")
     end
@@ -461,8 +574,12 @@ mod.apply_desire_path_wear = function(p)
     if gapi.rng(1, 100) <= mod.scaled_percent(mod.DESIRE_PATH_LONG_TO_GRASS_CHANCE, rate) then
       map:set_ter_at(p, ids.grass_id)
     end
-  elseif ter == ids.grass_id or ter == ids.dead_grass_id then
-    if gapi.rng(1, 100) <= mod.scaled_percent(mod.DESIRE_PATH_GRASS_TO_DIRT_CHANCE, rate) then
+  elseif ter == ids.grass_id then
+    if gapi.rng(1, 100) <= mod.scaled_percent(mod.DESIRE_PATH_GRASS_TO_DEAD_CHANCE, rate) then
+      map:set_ter_at(p, ids.dead_grass_id)
+    end
+  elseif ter == ids.dead_grass_id then
+    if gapi.rng(1, 100) <= mod.scaled_percent(mod.DESIRE_PATH_DEAD_TO_DIRT_CHANCE, rate) then
       map:set_ter_at(p, ids.dirt_id)
     end
   end
@@ -489,6 +606,16 @@ mod.scaled_percent = function(base_percent, intensity)
   return math.min(base_percent * intensity, 100)
 end
 
+--- Smash a terrain tile through BN's bash path so normal drops and transitions occur.
+---@param map Map
+---@param p any
+---@return boolean
+mod.try_destroy_terrain = function(map, p)
+  local before = map:get_ter_at(p)
+  map:destroy(p)
+  return map:get_ter_at(p) ~= before
+end
+
 --- Cache terrain ids used by both mapgen and periodic updates.
 ---@return table
 mod.get_terrain_ids = function()
@@ -497,12 +624,21 @@ mod.get_terrain_ids = function()
   end
 
   mod.cached_terrain_ids = {
+    fire_field_id = FieldTypeId.new("fd_fire"):int_id(),
+
     -- windows / glass / doors
     frame_id = TerId.new("t_window_frame"):int_id(),
     frame_domestic_id = TerId.new("t_window_frame_domestic"):int_id(),
     empty_id = TerId.new("t_window_empty"):int_id(),
     empty_domestic_id = TerId.new("t_window_empty_domestic"):int_id(),
+    empty_taped_id = TerId.new("t_window_empty_taped"):int_id(),
+    empty_domestic_taped_id = TerId.new("t_window_empty_domestic_taped"):int_id(),
     boarded_window_id = TerId.new("t_window_boarded"):int_id(),
+    boarded_window_noglass_id = TerId.new("t_window_boarded_noglass"):int_id(),
+    reinforced_window_noglass_id = TerId.new("t_window_reinforced_noglass"):int_id(),
+    armored_window_noglass_id = TerId.new("t_window_enhanced_noglass"):int_id(),
+    window_bars_id = TerId.new("t_window_bars"):int_id(),
+    window_bars_domestic_id = TerId.new("t_window_bars_domestic"):int_id(),
     curtains_id = TerId.new("t_curtains"):int_id(),
     glass_wall_id = TerId.new("t_wall_glass"):int_id(),
     glass_wall_alarm_id = TerId.new("t_wall_glass_alarm"):int_id(),
@@ -511,6 +647,7 @@ mod.get_terrain_ids = function()
     door_o_id = TerId.new("t_door_o"):int_id(),
     door_locked_id = TerId.new("t_door_locked"):int_id(),
     door_c_id = TerId.new("t_door_c"):int_id(),
+    door_boarded_id = TerId.new("t_door_boarded"):int_id(),
     door_b_id = TerId.new("t_door_b"):int_id(),
     door_frame_id = TerId.new("t_door_frame"):int_id(),
 
@@ -558,10 +695,143 @@ mod.get_overgrowth_intensity = function()
   return intensity
 end
 
---- World age in whole days.
+--- World age in whole days since the player started this world.
 ---@return number
 mod.get_elapsed_days = function()
-  return (gapi.current_turn() - gapi.turn_zero()):to_days()
+  local current_turn = (gapi.current_turn() - gapi.turn_zero()):to_turns()
+  local elapsed_turns = math.max(0, current_turn - mod.ensure_world_start_turn())
+  return TimeDuration.from_turns(elapsed_turns):to_days()
+end
+
+--- Remaining fraction of early-world riot damage intensity.
+---@return number
+mod.get_riot_damage_factor = function()
+  local config = mod.ensure_config()
+  if not config.riot_damage_enabled then
+    return 0
+  end
+
+  local elapsed_days = mod.get_elapsed_days()
+  if elapsed_days >= mod.RIOT_DAMAGE_DURATION_DAYS then
+    return 0
+  end
+
+  return math.max(0, (mod.RIOT_DAMAGE_DURATION_DAYS - elapsed_days) / mod.RIOT_DAMAGE_DURATION_DAYS)
+end
+
+--- Heuristic for whether a mapgen tile is mostly an indoor/manmade building.
+---@param map Map
+---@param size integer
+---@param point_at fun(x: integer, y: integer): any
+---@return boolean
+mod.is_probable_building_map = function(map, size, point_at)
+  local ids = mod.get_terrain_ids()
+  local score = 0
+
+  for y = 0, size - 1 do
+    for x = 0, size - 1 do
+      local p = point_at(x, y)
+      local ter = map:get_ter_at(p)
+
+      if ter == ids.floor_id or ter == ids.floor_waxed_id or ter == ids.thconc_floor_id then
+        score = score + 2
+      elseif ter == ids.door_c_id or ter == ids.door_locked_id or ter == ids.door_glass_c_id or ter == ids.door_boarded_id or ter == ids.curtains_id then
+        score = score + 2
+      else
+        local ter_str = ter:str_id():str()
+        if mod.is_glass_window(ter_str) then
+          score = score + 2
+        elseif string.sub(ter_str, 1, 6) == "t_wall" then
+          score = score + 1
+        end
+      end
+
+      if score >= 60 then
+        return true
+      end
+    end
+  end
+
+  return false
+end
+
+--- Whether this generated location should receive early riot damage.
+--- Uses x/y only so all z-levels of one location stay consistent.
+---@param omt TripointAbsOmt
+---@param map Map
+---@param size integer
+---@param point_at fun(x: integer, y: integer): any
+---@return boolean
+mod.should_apply_riot_damage = function(omt, map, size, point_at)
+  if mod.is_maintained_location(omt) then
+    return false
+  end
+
+  local factor = mod.get_riot_damage_factor()
+  if factor <= 0 then
+    return false
+  end
+
+  if not mod.is_probable_building_map(map, size, point_at) then
+    return false
+  end
+
+  local chance = mod.RIOT_DAMAGE_BASE_LOCATION_CHANCE * factor
+  return mod.hash_noise(omt.x, omt.y, 44127) < chance
+end
+
+--- Apply early riot/collapse damage to a generated building tile.
+---@param map Map
+---@param p any
+---@param ids table
+---@param riot_factor number
+---@param add_active_fire boolean
+mod.apply_riot_damage_to_tile = function(map, p, ids, riot_factor, add_active_fire)
+  local ter = map:get_ter_at(p)
+  local ter_str = ter:str_id():str()
+
+  if ter == ids.curtains_id then
+    if gapi.rng(1, 100) <= mod.scaled_percent(55, riot_factor) then
+      mod.try_destroy_terrain(map, p)
+      ter = map:get_ter_at(p)
+    end
+  elseif mod.is_glass_window(ter_str) then
+    if gapi.rng(1, 100) <= mod.scaled_percent(mod.RIOT_WINDOW_DAMAGE_CHANCE, riot_factor) then
+      mod.try_destroy_terrain(map, p)
+      ter = map:get_ter_at(p)
+    end
+  end
+
+  if ter == ids.door_c_id or ter == ids.door_locked_id or ter == ids.door_glass_c_id then
+    if gapi.rng(1, 100) <= mod.scaled_percent(mod.RIOT_DOOR_DAMAGE_CHANCE, riot_factor) then
+      mod.try_destroy_terrain(map, p)
+      ter = map:get_ter_at(p)
+    end
+  end
+
+  if add_active_fire and (ter == ids.floor_id or ter == ids.floor_waxed_id or ter == ids.thconc_floor_id) then
+    local config = mod.ensure_config()
+    if gapi.rng(1, 100) <= mod.scaled_percent(config.riot_fire_chance, riot_factor) then
+      map:add_field_at(p, ids.fire_field_id, gapi.rng(1, 2), TimeDuration.from_minutes(gapi.rng(20, 180)))
+    end
+  end
+end
+
+--- Shared riot damage pass for generated building maps.
+---@param map Map
+---@param size integer
+---@param riot_factor number
+---@param add_active_fire boolean
+---@param point_at fun(x: integer, y: integer): any
+mod.apply_riot_damage_pass = function(map, size, riot_factor, add_active_fire, point_at)
+  local ids = mod.get_terrain_ids()
+
+  for y = 0, size - 1 do
+    for x = 0, size - 1 do
+      local p = point_at(x, y)
+      mod.apply_riot_damage_to_tile(map, p, ids, riot_factor, add_active_fire)
+    end
+  end
 end
 
 --- Whether this generated location should use boarded intact windows.
@@ -590,6 +860,54 @@ mod.should_board_generated_location = function(omt)
   return mod.hash_noise(omt.x, omt.y, 90210) < mod.BOARDING_LOCATION_CHANCE
 end
 
+--- Choose the late-world variant for newly generated boarded windows.
+---@param ids table
+---@param is_domestic boolean
+---@param noise_x number
+---@param noise_y number
+---@param noise_seed number
+---@return any
+mod.select_boarded_window_variant = function(ids, is_domestic, noise_x, noise_y, noise_seed)
+  local elapsed_days = mod.get_elapsed_days()
+  if elapsed_days < mod.BOARDING_VARIANT_START_DAY then
+    return ids.boarded_window_id
+  end
+
+  local roll = mod.hash_noise(noise_x, noise_y, noise_seed + 411)
+
+  if elapsed_days >= mod.BOARDING_ARMORED_DAY then
+    if roll < 0.18 then
+      return is_domestic and ids.empty_domestic_taped_id or ids.empty_taped_id
+    elseif roll < 0.43 then
+      return is_domestic and ids.window_bars_domestic_id or ids.window_bars_id
+    elseif roll < 0.71 then
+      return ids.reinforced_window_noglass_id
+    elseif roll < 0.88 then
+      return ids.armored_window_noglass_id
+    else
+      return ids.boarded_window_noglass_id
+    end
+  elseif elapsed_days >= mod.BOARDING_REINFORCED_DAY then
+    if roll < 0.22 then
+      return is_domestic and ids.empty_domestic_taped_id or ids.empty_taped_id
+    elseif roll < 0.42 then
+      return is_domestic and ids.window_bars_domestic_id or ids.window_bars_id
+    elseif roll < 0.67 then
+      return ids.reinforced_window_noglass_id
+    else
+      return ids.boarded_window_noglass_id
+    end
+  else
+    if roll < 0.30 then
+      return is_domestic and ids.empty_domestic_taped_id or ids.empty_taped_id
+    elseif roll < 0.48 then
+      return is_domestic and ids.window_bars_domestic_id or ids.window_bars_id
+    else
+      return ids.boarded_window_id
+    end
+  end
+end
+
 --- Apply the overgrowth logic to a single tile.
 ---@param map Map
 ---@param p any
@@ -604,35 +922,24 @@ mod.apply_overgrowth_to_tile = function(map, p, ids, overgrowth_intensity, board
 
   if ter == ids.glass_wall_id or ter == ids.laminated_glass_id or ter == ids.glass_wall_alarm_id or ter == ids.door_glass_c_id then
     if gapi.rng(1, 100) <= 60 then
-      map:set_ter_at(p, ids.floor_id)
+      mod.try_destroy_terrain(map, p)
     end
   end
 
   if ter == ids.door_c_id or ter == ids.door_locked_id then
-    local roll = gapi.rng(1, 3)
-    local target = roll == 1 and ids.door_o_id or roll == 2 and ids.door_frame_id or ids.door_b_id
-    map:set_ter_at(p, target)
+    mod.try_destroy_terrain(map, p)
   end
 
   if ter == ids.chainfence_id then
     if gapi.rng(1, 100) <= 50 then
-      local roll = gapi.rng(1, 4)
-      if roll == 1 then
-        map:set_ter_at(p, ids.chainfence_posts_id)
-      elseif roll == 2 then
-        map:set_ter_at(p, ids.dirt_id)
-      elseif roll == 3 then
-        map:set_ter_at(p, ids.grass_id)
-      else
-        map:set_ter_at(p, ids.dead_grass_id)
-      end
+      mod.try_destroy_terrain(map, p)
     end
   end
 
   if ter == ids.fence_id then
     local threshold = mod.scaled_percent(25, overgrowth_intensity)
     if gapi.rng(1, 100) <= threshold then
-      map:set_ter_at(p, ids.fence_post_id)
+      mod.try_destroy_terrain(map, p)
     end
   end
 
@@ -641,8 +948,12 @@ mod.apply_overgrowth_to_tile = function(map, p, ids, overgrowth_intensity, board
   if ter == ids.curtains_id then
     local threshold = mod.scaled_percent(75, overgrowth_intensity)
     if gapi.rng(1, 100) <= threshold then
-      local target = board_intact_windows and ids.boarded_window_id or ids.frame_domestic_id
-      map:set_ter_at(p, target)
+      if board_intact_windows then
+        local target = mod.select_boarded_window_variant(ids, true, noise_x, noise_y, noise_seed)
+        map:set_ter_at(p, target)
+      else
+        mod.try_destroy_terrain(map, p)
+      end
     end
   end
 
@@ -650,13 +961,11 @@ mod.apply_overgrowth_to_tile = function(map, p, ids, overgrowth_intensity, board
     local is_domestic = string.find(ter_str, "domestic", 1, true)
     local target
     if board_intact_windows then
-      target = ids.boarded_window_id
+      target = mod.select_boarded_window_variant(ids, is_domestic ~= nil, noise_x, noise_y, noise_seed)
+      map:set_ter_at(p, target)
     else
-      local use_empty = gapi.rng(1, 100) <= 50
-      target = is_domestic and (use_empty and ids.empty_domestic_id or ids.frame_domestic_id) or
-        (use_empty and ids.empty_id or ids.frame_id)
+      mod.try_destroy_terrain(map, p)
     end
-    map:set_ter_at(p, target)
   end
 
   if ter == ids.pavement_id or ter == ids.pavement_y_id or ter == ids.sidewalk_id or ter == ids.thconc_floor_id then
@@ -720,18 +1029,31 @@ mod.on_mapgen_postprocess = function(params)
 
   local map = params.map
   local size = map:get_map_size()
+  local point_at = function(x, y)
+    return PointOmtMs.new(x, y)
+  end
+  local should_apply_riot_damage = mod.should_apply_riot_damage(params.omt, map, size, point_at)
+
   mod.apply_overgrowth_pass(
     map,
     size,
     mod.should_board_generated_location(params.omt),
-    function(x, y)
-      return PointOmtMs.new(x, y)
-    end,
+    point_at,
     function(x, y)
       return params.omt.x * size + x, params.omt.y * size + y, params.omt.z * 13
     end,
     nil
   )
+
+  if should_apply_riot_damage then
+    mod.apply_riot_damage_pass(
+      map,
+      size,
+      mod.get_riot_damage_factor(),
+      params.omt.z == 0,
+      point_at
+    )
+  end
 end
 
 --- Periodic update for the currently loaded reality bubble.

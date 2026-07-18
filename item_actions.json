@@ -1,0 +1,7 @@
+[
+  {
+    "type": "item_action",
+    "id": "OVERGROWTH_MAINTENANCE_KIT",
+    "name": { "str": "Apply overgrowth suppressant" }
+  }
+]

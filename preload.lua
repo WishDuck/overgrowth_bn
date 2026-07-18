@@ -1,6 +1,9 @@
 local mod = game.mod_runtime[game.current_mod]
 
 table.insert(game.hooks.on_mapgen_postprocess, function(...) return mod.on_mapgen_postprocess(...) end)
+game.add_hook("on_game_started", function(...)
+  if mod.on_game_started then return mod.on_game_started(...) end
+end)
 gapi.add_on_every_x_hook(TimeDuration.from_days(1), function(...)
   if mod.on_periodic_overgrowth_update then return mod.on_periodic_overgrowth_update(...) end
 end)
