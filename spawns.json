@@ -1,0 +1,18 @@
+[
+  {
+    "type": "item_group",
+    "id": "hardware",
+    "items": [
+      [ "overgrowth_maintenance_kit", 6 ],
+      [ "overgrowth_herbicide_charge", 10 ]
+    ]
+  },
+  {
+    "type": "item_group",
+    "id": "hardware_bulk",
+    "items": [
+      { "item": "overgrowth_maintenance_kit", "prob": 8, "count": [ 1, 2 ] },
+      { "item": "overgrowth_herbicide_charge", "prob": 30, "count": [ 1, 4 ] }
+    ]
+  }
+]

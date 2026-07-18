@@ -34,6 +34,6 @@
     "initial_charges": 0,
     "charges_per_use": 4,
     "ammo": [ "water" ],
-    "use_action": "OVERGROWTH_MAINTENANCE_KIT"
+    "use_action": [ "OVERGROWTH_MAINTENANCE_KIT" ]
   }
 ]

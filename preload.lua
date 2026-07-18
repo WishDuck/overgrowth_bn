@@ -4,6 +4,12 @@ table.insert(game.hooks.on_mapgen_postprocess, function(...) return mod.on_mapge
 gapi.add_on_every_x_hook(TimeDuration.from_days(1), function(...)
   if mod.on_periodic_overgrowth_update then return mod.on_periodic_overgrowth_update(...) end
 end)
+game.add_hook("on_character_try_move", function(...)
+  if mod.on_character_try_move then return mod.on_character_try_move(...) end
+end)
+game.add_hook("on_monster_try_move", function(...)
+  if mod.on_monster_try_move then return mod.on_monster_try_move(...) end
+end)
 
 gapi.register_action_menu_entry({
   id = "overgrowth_bn_config",

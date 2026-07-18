@@ -5,10 +5,15 @@ mod.storage = storage
 mod.BOARDING_START_DAY = 28
 mod.BOARDING_LOCATION_CHANCE = 0.25
 mod.MAINTENANCE_DURATION_DAYS = 90
+mod.DESIRE_PATH_LONG_TO_GRASS_CHANCE = 6
+mod.DESIRE_PATH_TALL_TO_GRASS_CHANCE = 10
+mod.DESIRE_PATH_GRASS_TO_DIRT_CHANCE = 2
 mod.DEFAULT_CONFIG = {
   growth_mode = "time",
   overgrowth_rate = 1.0,
   window_boarding_mode = "some",
+  desire_paths_enabled = true,
+  desire_path_rate = 1.0,
 }
 
 --- Ensure persistent maintained-location registry exists.
@@ -117,6 +122,16 @@ mod.ensure_config = function()
     config.window_boarding_mode = mod.DEFAULT_CONFIG.window_boarding_mode
   end
 
+  if type(config.desire_paths_enabled) ~= "boolean" then
+    config.desire_paths_enabled = mod.DEFAULT_CONFIG.desire_paths_enabled
+  end
+
+  local desire_path_rate = tonumber(config.desire_path_rate)
+  if not desire_path_rate or desire_path_rate <= 0 then
+    desire_path_rate = mod.DEFAULT_CONFIG.desire_path_rate
+  end
+  config.desire_path_rate = desire_path_rate
+
   return config
 end
 
@@ -137,11 +152,39 @@ mod.describe_boarding_mode = function()
   return "Some eligible generated locations"
 end
 
+---@return string
+mod.describe_desire_paths_mode = function()
+  local config = mod.ensure_config()
+  return config.desire_paths_enabled and "Enabled" or "Disabled"
+end
+
+mod.prompt_desire_path_rate = function()
+  local config = mod.ensure_config()
+  local popup = PopupInputStr.new()
+  popup:title("Desire Path Speed")
+  popup:desc(string.format("Current value: %.2fx\nEnter a positive number. 1.0 is default.", config.desire_path_rate))
+  local value = popup:query_str()
+  if value == nil or value == "" then
+    return
+  end
+
+  local rate = tonumber(value)
+  if not rate or rate <= 0 then
+    gapi.add_msg(MsgType.bad, "Desire path speed must be a positive number.")
+    return
+  end
+
+  config.desire_path_rate = rate
+  gapi.add_msg(MsgType.good, string.format("Desire path speed set to %.2fx.", rate))
+end
+
 mod.reset_config = function()
   storage.config = {
     growth_mode = mod.DEFAULT_CONFIG.growth_mode,
     overgrowth_rate = mod.DEFAULT_CONFIG.overgrowth_rate,
     window_boarding_mode = mod.DEFAULT_CONFIG.window_boarding_mode,
+    desire_paths_enabled = mod.DEFAULT_CONFIG.desire_paths_enabled,
+    desire_path_rate = mod.DEFAULT_CONFIG.desire_path_rate,
   }
   return storage.config
 end
@@ -200,15 +243,19 @@ mod.open_config_menu = function()
     menu:title("Overgrowth Settings")
     menu:desc_enabled(true)
     menu:text(string.format(
-      "Growth mode: %s\nOvergrowth rate: %.2fx\nWindow boarding: %s\n\nPeriodic growth only updates z=0. Boarding only affects newly generated intact windows.",
+      "Growth mode: %s\nOvergrowth rate: %.2fx\nWindow boarding: %s\nDesire paths: %s\nDesire path speed: %.2fx\n\nPeriodic growth only updates z=0. Boarding only affects newly generated intact windows. Desire paths use lightweight foot-traffic wear on z=0.",
       mod.describe_growth_mode(),
       config.overgrowth_rate,
-      mod.describe_boarding_mode()
+      mod.describe_boarding_mode(),
+      mod.describe_desire_paths_mode(),
+      config.desire_path_rate
     ))
     menu:add_w_desc(0, "Toggle Growth Mode", "Switch between gradual growth over time and instant full overgrowth.")
     menu:add_w_desc(1, string.format("Set Overgrowth Rate (%.2fx)", config.overgrowth_rate), "Adjust how quickly and strongly overgrowth applies.")
     menu:add_w_desc(2, "Configure Window Boarding", "Choose whether newly generated intact windows can be boarded.")
-    menu:add_w_desc(3, "Reset Defaults", "Restore the default mod settings.")
+    menu:add_w_desc(3, string.format("Toggle Desire Paths (%s)", mod.describe_desire_paths_mode()), "Use lightweight traffic wear from player, NPC, and monster movement on z=0.")
+    menu:add_w_desc(4, string.format("Set Desire Path Speed (%.2fx)", config.desire_path_rate), "Adjust how quickly foot traffic wears grass into dirt.")
+    menu:add_w_desc(5, "Reset Defaults", "Restore the default mod settings.")
 
     local choice = menu:query()
     if choice < 0 then
@@ -221,6 +268,11 @@ mod.open_config_menu = function()
     elseif choice == 2 then
       mod.select_window_boarding_mode()
     elseif choice == 3 then
+      config.desire_paths_enabled = not config.desire_paths_enabled
+      gapi.add_msg(MsgType.good, string.format("Desire paths: %s.", mod.describe_desire_paths_mode()))
+    elseif choice == 4 then
+      mod.prompt_desire_path_rate()
+    elseif choice == 5 then
       config = mod.reset_config()
       gapi.add_msg(MsgType.good, "Overgrowth settings reset to defaults.")
     end
@@ -383,6 +435,52 @@ mod.apply_road_overlay = function(map, p, heat, dirt_id, grass_id, dead_grass_id
   end
 end
 
+--- Lightweight terrain wear from repeated foot traffic.
+--- Runs on movement-attempt hooks to avoid expensive map scans or persistent path state.
+---@param p TripointBubMs?
+mod.apply_desire_path_wear = function(p)
+  local config = mod.ensure_config()
+  if not config.desire_paths_enabled or p == nil or p.z ~= 0 then
+    return
+  end
+
+  local map = gapi.get_map()
+  if map == nil then
+    return
+  end
+
+  local ids = mod.get_terrain_ids()
+  local ter = map:get_ter_at(p)
+  local rate = config.desire_path_rate
+
+  if ter == ids.tall_grass_id then
+    if gapi.rng(1, 100) <= mod.scaled_percent(mod.DESIRE_PATH_TALL_TO_GRASS_CHANCE, rate) then
+      map:set_ter_at(p, ids.grass_id)
+    end
+  elseif ter == ids.long_grass_id then
+    if gapi.rng(1, 100) <= mod.scaled_percent(mod.DESIRE_PATH_LONG_TO_GRASS_CHANCE, rate) then
+      map:set_ter_at(p, ids.grass_id)
+    end
+  elseif ter == ids.grass_id or ter == ids.dead_grass_id then
+    if gapi.rng(1, 100) <= mod.scaled_percent(mod.DESIRE_PATH_GRASS_TO_DIRT_CHANCE, rate) then
+      map:set_ter_at(p, ids.dirt_id)
+    end
+  end
+end
+
+---@param params table
+mod.on_character_try_move = function(params)
+  if params.mounted == true then
+    return
+  end
+  mod.apply_desire_path_wear(params.to)
+end
+
+---@param params table
+mod.on_monster_try_move = function(params)
+  mod.apply_desire_path_wear(params.to)
+end
+
 --- Scale a percentage chance by overgrowth intensity and clamp it to 100%.
 ---@param base_percent number
 ---@param intensity number
@@ -394,7 +492,11 @@ end
 --- Cache terrain ids used by both mapgen and periodic updates.
 ---@return table
 mod.get_terrain_ids = function()
-  return {
+  if mod.cached_terrain_ids ~= nil then
+    return mod.cached_terrain_ids
+  end
+
+  mod.cached_terrain_ids = {
     -- windows / glass / doors
     frame_id = TerId.new("t_window_frame"):int_id(),
     frame_domestic_id = TerId.new("t_window_frame_domestic"):int_id(),
@@ -429,10 +531,13 @@ mod.get_terrain_ids = function()
     -- nature
     dirt_id = TerId.new("t_dirt"):int_id(),
     grass_id = TerId.new("t_grass"):int_id(),
+    long_grass_id = TerId.new("t_grass_long"):int_id(),
     dead_grass_id = TerId.new("t_grass_dead"):int_id(),
     tall_grass_id = TerId.new("t_grass_tall"):int_id(),
     young_tree_id = TerId.new("t_tree_young"):int_id(),
   }
+
+  return mod.cached_terrain_ids
 end
 
 --- Calculate overgrowth intensity based on time elapsed.
