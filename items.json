@@ -1,0 +1,39 @@
+[
+  {
+    "id": "overgrowth_herbicide_charge",
+    "type": "AMMO",
+    "category": "chems",
+    "name": { "str": "herbicide mix" },
+    "description": "A small refill bottle of harsh bleach-based herbicide mix for overgrowth control sprayers.",
+    "weight": "250 g",
+    "volume": "250 ml",
+    "price": "6 USD",
+    "price_postapoc": "1 USD",
+    "material": [ "water" ],
+    "phase": "liquid",
+    "symbol": "=",
+    "color": "light_green",
+    "container": "bottle_plastic_small",
+    "ammo_type": "water",
+    "count": 20
+  },
+  {
+    "id": "overgrowth_maintenance_kit",
+    "type": "TOOL",
+    "category": "tools",
+    "name": { "str": "overgrowth maintenance kit" },
+    "description": "A bleach-fed maintenance sprayer and field kit used to keep a base perimeter under control. Activating it marks the current overmap tile and stops future overgrowth there for about 90 days.",
+    "weight": "1450 g",
+    "volume": "1750 ml",
+    "price": "38 USD",
+    "price_postapoc": "4 USD",
+    "material": [ "plastic", "steel" ],
+    "symbol": ";",
+    "color": "green",
+    "max_charges": 40,
+    "initial_charges": 0,
+    "charges_per_use": 4,
+    "ammo": [ "water" ],
+    "use_action": "OVERGROWTH_MAINTENANCE_KIT"
+  }
+]

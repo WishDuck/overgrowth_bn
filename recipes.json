@@ -1,0 +1,53 @@
+[
+  {
+    "type": "recipe",
+    "result": "overgrowth_herbicide_charge",
+    "category": "CC_MISC",
+    "subcategory": "",
+    "skill_used": "cooking",
+    "difficulty": 1,
+    "time": "5 m",
+    "autolearn": true,
+    "contained": true,
+    "container": "bottle_plastic_small",
+    "charges": 20,
+    "components": [
+      [
+        [ "bleach", 1 ]
+      ],
+      [
+        [ "water_clean", 1 ]
+      ]
+    ]
+  },
+  {
+    "type": "recipe",
+    "result": "overgrowth_maintenance_kit",
+    "category": "CC_MISC",
+    "subcategory": "",
+    "skill_used": "fabrication",
+    "skills_required": [ [ "survival", 1 ] ],
+    "difficulty": 2,
+    "time": "20 m",
+    "autolearn": true,
+    "components": [
+      [
+        [ "shears", 1 ]
+      ],
+      [
+        [ "spray_can", 1 ],
+        [ "bottle_plastic", 1 ]
+      ],
+      [
+        [ "rag", 1 ],
+        [ "towel", 1 ]
+      ],
+      [
+        [ "duct_tape", 20 ]
+      ],
+      [
+        [ "bleach", 1 ]
+      ]
+    ]
+  }
+]
