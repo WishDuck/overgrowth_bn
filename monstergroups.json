@@ -8,7 +8,6 @@
       { "monster": "mon_deer", "freq": 34, "cost_multiplier": 1, "pack_size": [ 1, 4 ] },
       { "monster": "mon_turkey", "freq": 20, "cost_multiplier": 1, "pack_size": [ 1, 4 ] },
       { "monster": "mon_black_rat", "freq": 20, "cost_multiplier": 1, "pack_size": [ 2, 6 ] },
-      { "monster": "mon_rat_king", "freq": 5, "cost_multiplier": 1 },
       { "monster": "mon_deer_mutant_spider", "freq": 5, "cost_multiplier": 1, "pack_size": [ 2, 6 ] },
       { "monster": "mon_rattlesnake", "freq": 20, "cost_multiplier": 1 },
       { "monster": "mon_fox_red", "freq": 10, "cost_multiplier": 1, "pack_size": [ 1, 2 ] },
