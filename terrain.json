@@ -1,0 +1,14 @@
+[
+  {
+    "type": "terrain",
+    "id": "t_pavement_cracked",
+    "symbol": "x",
+    "color": "dark_gray",
+    "copy-from": "t_pavement",
+    "move_cost": 4,
+    "name": "cracked pavement",
+    "flags": [ "TRANSPARENT", "ROAD", "MINEABLE" ],
+    "description": "A badly weathered segment of asphalt split by heavy cracks and neglect, as a result it can no longer be considered 'flat.'",
+    "looks_like": "t_pavement"
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "name": "GROUP_OVERGROWTH_CITY_WILDLIFE",
+    "type": "monstergroup",
+    "default": "mon_deer",
+    "monsters": [
+      { "monster": "mon_raccoon", "freq": 40, "cost_multiplier": 1, "pack_size": [ 2, 6 ] },
+      { "monster": "mon_deer", "freq": 34, "cost_multiplier": 1, "pack_size": [ 1, 4 ] },
+      { "monster": "mon_turkey", "freq": 20, "cost_multiplier": 1, "pack_size": [ 1, 4 ] },
+      { "monster": "mon_black_rat", "freq": 20, "cost_multiplier": 1, "pack_size": [ 2, 6 ] },
+      { "monster": "mon_rat_king", "freq": 5, "cost_multiplier": 1 },
+      { "monster": "mon_deer_mutant_spider", "freq": 5, "cost_multiplier": 1, "pack_size": [ 2, 6 ] },
+      { "monster": "mon_rattlesnake", "freq": 20, "cost_multiplier": 1 },
+      { "monster": "mon_fox_red", "freq": 10, "cost_multiplier": 1, "pack_size": [ 1, 2 ] },
+      { "monster": "mon_coyote", "freq": 14, "cost_multiplier": 2, "pack_size": [ 2, 6 ] },
+      { "monster": "mon_coyote_wolf", "freq": 8, "cost_multiplier": 2, "pack_size": [ 2, 6 ] },
+      { "monster": "mon_wolf", "freq": 5, "cost_multiplier": 3, "pack_size": [ 2, 4 ] }
+    ]
+  }
+]
